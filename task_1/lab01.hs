@@ -39,14 +39,14 @@ unsatisfiable_formulas = [p /\ q /\ s /\ Not p, T /\ F, F, (p \/ q /\ r) /\ Not 
 
 -- formulas are shown with full parenthesisation
 instance Show Formula where
-  show T = "⊤"
-  show F = "⊥"
+  show T = "T"
+  show F = "F"
   show (Var x) = x
   show (Not phi) = "(Not " ++ show phi ++ ")" -- ¬
-  show (And phi psi) = "(" ++ show phi ++ " ∧ " ++ show psi ++ ")"
-  show (Or phi psi) = "(" ++ show phi ++ " ∨ " ++ show psi ++ ")"
-  show (Implies phi psi) = "(" ++ show phi ++ " → " ++ show psi ++ ")"
-  show (Iff phi psi) = "(" ++ show phi ++ " ↔ " ++ show psi ++ ")"
+  show (And phi psi) = "(" ++ show phi ++ " /\\ " ++ show psi ++ ")"
+  show (Or phi psi) = "(" ++ show phi ++ " \\/ " ++ show psi ++ ")"
+  show (Implies phi psi) = "(" ++ show phi ++ " --> " ++ show psi ++ ")"
+  show (Iff phi psi) = "(" ++ show phi ++ " <--> " ++ show psi ++ ")"
 
 -- generation of random formulas, used for testing
 instance Arbitrary Formula where
@@ -181,7 +181,29 @@ prop_deep_simplify phi = tautology $ Iff phi (simplify phi)
 -- negation normal form (negation is only applied to variables)
 -- Question: What is complexity of this transformation in terms of formula size?
 nnf :: Formula -> Formula
-nnf = undefined
+remove_imp_iff (Implies phi psi) = Or (Not (remove_imp_iff phi)) (remove_imp_iff psi)
+remove_imp_iff (Iff phi psi) = And (Or (Not (remove_imp_iff phi)) (remove_imp_iff psi)) (Or (Not (remove_imp_iff psi)) (remove_imp_iff phi))
+remove_imp_iff (Not phi) = Not (remove_imp_iff phi)
+remove_imp_iff (And phi psi) = And (remove_imp_iff phi) (remove_imp_iff psi)
+remove_imp_iff (Or phi psi) = Or (remove_imp_iff phi) (remove_imp_iff psi)
+remove_imp_iff phi = phi
+
+nnf phi = nnf' $ remove_imp_iff phi
+
+nnf' T = T
+nnf' F = F
+nnf' (Var p) = Var p
+nnf' (Not (Var p)) = Not (Var p)
+
+nnf' (Not T) = F
+nnf' (Not F) = T
+nnf' (Not (Not phi)) = nnf phi
+nnf' (Not (And phi psi)) = Or (nnf (Not phi)) (nnf (Not psi))
+nnf' (Not (Or phi psi)) = And (nnf (Not phi)) (nnf (Not psi))
+nnf' (Not phi) = Not (nnf phi)
+
+nnf' (And phi psi) = And (nnf phi) (nnf psi)
+nnf' (Or phi psi) = Or (nnf phi) (nnf psi)
 
 -- checks that the input is in nnf
 is_nnf :: Formula -> Bool
@@ -212,13 +234,13 @@ opposite (Neg p) = Pos p
 
 -- transform a formula to equivalent dnf (exponential)
 dnf :: Formula -> [[Literal]]
-dnf phi = go $ nnf phi where
-  go T = undefined
-  go F = undefined
-  go (Var x) = undefined
-  go (Not (Var x)) = undefined
-  go (Or phi psi) = undefined
-  go (And phi psi) = undefined
+dnf phi = go $ deep_simplify (nnf phi) where
+  go T = [[]]
+  go F = []
+  go (Var x) = [[Pos x]]
+  go (Not (Var x)) = [[Neg x]]
+  go (Or phi psi) = go phi ++ go psi
+  go (And phi psi) = [xs ++ ys | xs <- go phi, ys <- go psi]
 
 dnf2formula :: [[Literal]] -> Formula
 dnf2formula [] = F
@@ -248,8 +270,14 @@ type SatSolver = Formula -> Bool
 -- idea: compute the DNF and return "satisfiable" if it contains a satisfiable clause
 -- Question: Considering that Haskell has a lazy evaluation strategy, what is the performance of "sat_dnf" vs. "satisfiable" (based on truth tables)?
 -- Question: What is the performance of "sat_dnf" on unsatisfiable formulas?
+compare_list :: (Eq a) => [a] -> [a] -> Bool
+compare_list a = not . null . intersect a
+
 sat_dnf :: SatSolver
-sat_dnf = undefined
+sat_dnf phi = go $ dnf phi where
+  go [] = False
+  go [[]] = True
+  go (x : xs) = if compare_list (positive_literals x) (negative_literals x) then go xs else True
 
 -- tests on random formulas
 prop_sat_dnf :: Formula -> Bool
