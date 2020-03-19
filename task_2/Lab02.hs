@@ -242,16 +242,20 @@ prop_ecnf phi = equi_satisfiable phi (cnf2formula $ ecnf phi)
 
 findOpposite _ [] = []
 findOpposite (Pos x) (y:ys)
-  | (Neg x) `elem` y = delete (Neg x) y ++ findOpposite (Pos x) ys
-  | (Pos x) `elem` y = delete (Pos x) y ++ findOpposite (Pos x) ys
+  | (Neg x) `elem` y = delete (Neg x) y
   | otherwise = findOpposite (Pos x) ys
 findOpposite (Neg x) (y:ys)
-  | (Neg x) `elem` y = delete (Neg x) y ++ findOpposite (Neg x) ys
-  | (Pos x) `elem` y = delete (Pos x) y ++ findOpposite (Neg x) ys
-  | otherwise = findOpposite (Pos x) ys
+  | (Pos x) `elem` y = delete (Pos x) y
+  | otherwise = findOpposite (Neg x) ys
 
 resolution :: [[Literal]] -> [[Literal]]
-resolution lss = undefined
+resolution lss = resolution' lss (variables (cnf2formula lss))
+
+resolution' lss [] = lss
+resolution' lss (name:names) = resolution' (distribute all_negative all_positive ++ others) names
+  where all_negative = map (\z -> filter (/= Neg name) z) (filter (\clause -> (Neg name) `elem` clause) lss)
+        all_positive = map (\z -> filter (/= Pos name) z) (filter (\clause -> (Pos name) `elem` clause) lss)
+        others = filter (\clause -> not ((Pos name) `elem` clause || (Neg name) `elem` clause)) lss
 
 prop_resolution :: Bool
 prop_resolution = resolution [[Pos "p", Pos "q"], [Neg "p", Neg "q"]] == [[Pos "q", Neg "q"]]
@@ -270,8 +274,12 @@ literals ls = rmdups $ positive_literals ls ++ negative_literals ls
 
 -- TODO
 -- remove clauses containing a positive and a negative occurrence of the same literal
+
+compareList :: (Eq a) => [a] -> [a] -> Bool
+compareList a = not . null . intersect a
+
 remove_tautologies :: [[Literal]] -> [[Literal]]
-remove_tautologies lss = undefined
+remove_tautologies lss = filter (\x -> compareList (negative_literals x) (positive_literals x)) lss
 
 -- TODO
 -- One literal rule (aka unit propagation):
@@ -280,8 +288,20 @@ remove_tautologies lss = undefined
 -- Hint: Remove all occurrences of "opposite l"
 -- Hint: Remove any empty clause [... [] ...] arising from this process
 -- see slide #6 of https://github.com/lclem/logic_course/blob/master/docs/slides/03-resolution.pdf
+
+get_one_literal_clauses xs = filter (\ys -> length ys == 1) xs
+
 one_literal :: [[Literal]] -> [[Literal]]
-one_literal lss = undefined
+one_literal lss = one_literal' lss (get_one_literal_clauses lss)
+
+removeL l xs = filter (\y -> not (l `elem` y)) xs
+
+removeOpposite l xs = map (\z -> filter (/= opposite l) z) xs
+
+removeEmpty xs = filter (/=[]) xs
+
+one_literal' xs [] = xs
+one_literal' xs ([y]:ys) = one_literal' (removeEmpty (removeOpposite y (removeL y xs))) ys
 
 -- correctness test
 prop_one_literal :: Bool
