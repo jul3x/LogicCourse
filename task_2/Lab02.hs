@@ -240,14 +240,6 @@ prop_ecnf phi = equi_satisfiable phi (cnf2formula $ ecnf phi)
 -- Assumption 3: there is at least one clause
 -- Assumption 4: all clauses are nonempty
 
-findOpposite _ [] = []
-findOpposite (Pos x) (y:ys)
-  | (Neg x) `elem` y = delete (Neg x) y
-  | otherwise = findOpposite (Pos x) ys
-findOpposite (Neg x) (y:ys)
-  | (Pos x) `elem` y = delete (Pos x) y
-  | otherwise = findOpposite (Neg x) ys
-
 resolution :: [[Literal]] -> [[Literal]]
 resolution lss = resolution' lss (variables (cnf2formula lss))
 
@@ -318,13 +310,29 @@ prop_one_literal =
 -- Remove all clauses containing a literal that appears only positively or negatively in every clause
 -- see slide #7 of https://github.com/lclem/logic_course/blob/master/docs/slides/03-resolution.pdf
 -- this is the same as "elimination of pure literals" from the slide
+
+get_all_positive_literals lls = rmdups (get_all_positive_literals' lls)
+get_all_positive_literals' [] = []
+get_all_positive_literals' (x:xs) = positive_literals x ++ get_all_positive_literals' xs
+
+get_all_negative_literals lls = rmdups (get_all_negative_literals' lls)
+get_all_negative_literals' [] = []
+get_all_negative_literals' (x:xs) = negative_literals x ++ get_all_negative_literals' xs
+
+get_all_pure_literals lls = (neg \\ pos) ++ (pos \\ neg)
+  where neg = get_all_negative_literals lls
+        pos = get_all_positive_literals lls
+
 affirmative_negative :: [[Literal]] -> [[Literal]]
-affirmative_negative lss = undefined
+affirmative_negative lss = affirmative_negative' lss (get_all_pure_literals lss)
+
+affirmative_negative' lss [] = lss
+affirmative_negative' lss (l:ls) = affirmative_negative' (filter (\clause -> not ((Neg l) `elem` clause || (Pos l) `elem` clause)) lss) ls
 
 prop_affirmative_negative :: Bool
 prop_affirmative_negative =
   affirmative_negative [[Pos "p"],[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"],[Neg "p0",Neg "p"],[Neg "s",Pos "p",Pos "p0"]] ==
-    [[Pos "p"],[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"],[Neg "p0",Neg "p"],[Neg "s",Pos "p",Pos "p0"]]
+                       [[Pos "p"],[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"],[Neg "p0",Neg "p"],[Neg "s",Pos "p",Pos "p0"]]
 
 -- the main DP satisfiability loop
 -- this implements #15 of https://github.com/lclem/logic_course/blob/master/docs/slides/03-resolution.pdf
