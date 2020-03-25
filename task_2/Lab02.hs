@@ -208,6 +208,9 @@ ecnf phi = result ++ [[Pos ("x_phi" ++ show var)]] where
                             right_var + 1) 
     where (left_res, left_var) = go phi y
           (right_res, right_var) = go psi left_var
+  go (Not phi) y = (left_res ++ 
+                            cnf (Iff (Var ("x_phi" ++ show (left_var + 1))) (Not (Var ("x_phi" ++ show (left_var))) )), left_var+1) 
+    where (left_res, left_var) = go phi y
   go x y = (cnf (Iff (Var ("x_phi" ++ show (y+1))) x), y+1)
       
 
@@ -240,14 +243,23 @@ prop_ecnf phi = equi_satisfiable phi (cnf2formula $ ecnf phi)
 -- Assumption 3: there is at least one clause
 -- Assumption 4: all clauses are nonempty
 
+-- takes all of the clauses where VarName "name" appears negatively
+all_negative name lss =  map (\z -> filter (/= Neg name) z) (filter (\clause -> (Neg name) `elem` clause) lss)
+-- takes all of the clauses where VarName "name" appears positively
+all_positive name lss =  map (\z -> filter (/= Pos name) z) (filter (\clause -> (Pos name) `elem` clause) lss)
+-- takes all of the others clauses
+others name lss = filter (\clause -> not ((Pos name) `elem` clause || (Neg name) `elem` clause)) lss
+
 resolution :: [[Literal]] -> [[Literal]]
 resolution lss = resolution' lss (variables (cnf2formula lss))
 
 resolution' lss [] = lss
-resolution' lss (name:names) = resolution' (distribute all_negative all_positive ++ others) names
-  where all_negative = map (\z -> filter (/= Neg name) z) (filter (\clause -> (Neg name) `elem` clause) lss)
-        all_positive = map (\z -> filter (/= Pos name) z) (filter (\clause -> (Pos name) `elem` clause) lss)
-        others = filter (\clause -> not ((Pos name) `elem` clause || (Neg name) `elem` clause)) lss
+resolution' lss (name:names) 
+  | length all_negative' > 0 && length all_positive' > 0 = resolution' ((distribute all_positive' all_negative') ++ (others name lss)) []
+  | otherwise = resolution' lss names
+  where all_negative' = all_negative name lss
+        all_positive' = all_positive name lss
+        others' = others name lss
 
 prop_resolution :: Bool
 prop_resolution = resolution [[Pos "p", Pos "q"], [Neg "p", Neg "q"]] == [[Pos "q", Neg "q"]]
@@ -268,32 +280,32 @@ literals ls = rmdups $ positive_literals ls ++ negative_literals ls
 -- remove clauses containing a positive and a negative occurrence of the same literal
 
 compareList :: (Eq a) => [a] -> [a] -> Bool
-compareList a = not . null . intersect a
+compareList a = null . intersect a
 
 remove_tautologies :: [[Literal]] -> [[Literal]]
 remove_tautologies lss = filter (\x -> compareList (negative_literals x) (positive_literals x)) lss
+
+prop_remove_tautologies =
+    remove_tautologies [[Pos "p", Pos "x", Neg "p"], [Pos "x", Pos "y"], [Pos "p", Neg "q"]] == [[Pos "x", Pos "y"], [Pos "p", Neg "q"]]
 
 -- TODO
 -- One literal rule (aka unit propagation):
 -- A one-literal clause [... [l] ...] can be removed
 -- Hint: Remove [l] and all clauses containing l
 -- Hint: Remove all occurrences of "opposite l"
--- Hint: Remove any empty clause [... [] ...] arising from this process
+-- Hint: If any empty clause [... [] ...] arises from this process then this is UNSAT
 -- see slide #6 of https://github.com/lclem/logic_course/blob/master/docs/slides/03-resolution.pdf
 
-get_one_literal_clauses xs = filter (\ys -> length ys == 1) xs
-
 one_literal :: [[Literal]] -> [[Literal]]
-one_literal lss = one_literal' lss (get_one_literal_clauses lss)
+one_literal lss = one_literal' lss []
 
 removeL l xs = filter (\y -> not (l `elem` y)) xs
 
 removeOpposite l xs = map (\z -> filter (/= opposite l) z) xs
 
-removeEmpty xs = filter (/=[]) xs
-
-one_literal' xs [] = xs
-one_literal' xs ([y]:ys) = one_literal' (removeEmpty (removeOpposite y (removeL y xs))) ys
+one_literal' [] done = done
+one_literal' ([x]:xs) done = one_literal' (removeOpposite x (removeL x xs)) (removeOpposite x (removeL x done))
+one_literal' (x:xs) done = one_literal' xs (x:done)
 
 -- correctness test
 prop_one_literal :: Bool
@@ -332,7 +344,9 @@ affirmative_negative' lss (l:ls) = affirmative_negative' (filter (\clause -> not
 prop_affirmative_negative :: Bool
 prop_affirmative_negative =
   affirmative_negative [[Pos "p"],[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"],[Neg "p0",Neg "p"],[Neg "s",Pos "p",Pos "p0"]] ==
-                       [[Pos "p"],[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"],[Neg "p0",Neg "p"],[Neg "s",Pos "p",Pos "p0"]]
+                       [[Pos "p"],[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"],[Neg "p0",Neg "p"],[Neg "s",Pos "p",Pos "p0"]] &&
+  affirmative_negative [[Pos "p"],[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"],[Neg "p0",Pos "p"],[Neg "s",Pos "p",Pos "p0"]] ==
+                       [[Pos "p1"],[Neg "p1",Pos "q"],[Neg "p1",Pos "p0"],[Neg "q",Neg "p0",Pos "p1"],[Neg "p0",Pos "s"]]
 
 -- the main DP satisfiability loop
 -- this implements #15 of https://github.com/lclem/logic_course/blob/master/docs/slides/03-resolution.pdf
@@ -350,11 +364,11 @@ loop_DP lss =
 
 -- the DP SAT solver
 sat_DP :: SatSolver
-sat_DP = loop_DP . ecnf . deep_simplify . nnf
+sat_DP = loop_DP . ecnf . deep_simplify 
 
 -- tests on random formulas
 prop_DP :: Formula -> Bool
-prop_DP phi = -- unsafePerformIO (do print "Checking:"; print phi; return True) `seq`
+prop_DP phi = (print phi) `seq`
   sat_DP phi == satisfiable phi
 
 -- tests on fixed formulas
@@ -365,5 +379,7 @@ main = do
   quickCheckWith (stdArgs {maxSize = 5}) prop_ecnf
   quickCheck prop_one_literal
   quickCheck prop_resolution
+  quickCheck prop_affirmative_negative
+  quickCheck prop_remove_tautologies
   quickCheckWith (stdArgs {maxSize = 10}) prop_DP
   quickCheck prop_DP2
