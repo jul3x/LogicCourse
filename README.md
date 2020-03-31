@@ -1,2 +1,3 @@
 # LogicCourse
-Few exercises with main topic of propositional logic (MIMUW course)
+Few exercises with main topic of propositional and intuitionistic logic 
+(MIMUW course)
